@@ -1,0 +1,41 @@
+# Usage: ./find_subdomains.sh <domain>
+
+if [ "$#" -ne 1 ]; then
+    echo "Usage: $0 <domain>"
+    exit 1
+fi
+
+domain=$1
+output_dir="subdomain_output"
+
+# Create output directory if it doesn't exist
+mkdir -p $output_dir
+
+# Run subfinder
+echo "[*] Running subfinder..."
+subfinder -d $domain -o $output_dir/subfinder_output.txt
+
+# Run amass
+echo "[*] Running amass..."
+amass enum -d $domain -o $output_dir/amass_output.txt
+
+# Run alterx & dnsx
+echo "[*] Running alterx..."
+echo $domain | alterx -p '{{word}}.{{suffix}}' -pp 'word=/root/wordlist/SecLists/Discovery/DNS/subdomains-top1million-110000.txt' | dnsx -o $output_dir/dnsx_alterx.txt
+
+# Run crtsh
+echo "[*] Running crtsh..."
+curl -sk "https://crt.sh/?q=%.$domain&output=json" | tr ',' '\n' | awk -F'"' '/name_value/ {gsub(/\*\./, "", $4); gsub(/\\n/,"\n",$4);print $4}' | sort -u > $output_dir/crtsh_output.txt
+
+# Run waybackurls
+echo "[*] Running waybackurls..."
+curl -sk "http://web.archive.org/cdx/search/cdx?url=*.$domain&output=txt&fl=original&collapse=urlkey&page=" | awk -F/ '{gsub(/:.*/, "", $3); print $3}' | sort -u > $output_dir/waybackurls_output.txt
+
+# Combine all results
+cat $output_dir/*.txt | sort -u > $output_dir/all_subdomains.txt
+
+# Checking Live Subdomains
+
+cat $output_dir/all_subdomains.txt | httpx | tee $output_dir/live_all_subdomains.txt
+
+echo "[+] Subdomain discovery completed. Results saved in $output_dir/live_all_subdomains.txt"
